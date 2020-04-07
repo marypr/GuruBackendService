@@ -90,7 +90,7 @@ type ReturnedAddDepositData struct {
 
 // TransactionData - received data for AddDeposit
 type TransactionData struct {
-	ID     uint64    `json:"id"`
+	ID     uint64  `json:"id"`
 	UserID uint64  `json:"userId"`
 	Type   BetType `json:"betType"`
 	Amount float64 `json:"amount"`

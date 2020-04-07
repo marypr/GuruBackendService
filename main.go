@@ -1,9 +1,10 @@
 package main
 
 import (
-	"github.com/marypr/GuruBackendService/src"
 	"log"
 	"os"
+
+	"github.com/marypr/guruBackendService/src"
 )
 
 func main() {

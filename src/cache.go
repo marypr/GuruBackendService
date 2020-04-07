@@ -13,8 +13,8 @@ type cache struct {
 	transactions  map[uint64]*Transaction
 }
 
-// MyCache - cache
-var MyCache cache
+// transactionCache - cache
+var transactionCache cache
 
 const (
 	// AddDeposit - deposit changes
@@ -26,7 +26,7 @@ const (
 )
 
 func init() {
-	MyCache = cache{
+	transactionCache = cache{
 		users:         make(map[uint64]*User),
 		statistics:    make(map[uint64]*Statistics),
 		transactions:  make(map[uint64]*Transaction),
@@ -40,6 +40,7 @@ func (c *cache) AddUser(user *User) error {
 	if _, ok := c.users[user.ID]; ok {
 		return errors.New("user already exist")
 	}
+
 	c.users[user.ID] = user
 	return nil
 }
@@ -52,7 +53,6 @@ func (c *cache) GetUser(id uint64) (*User, error) {
 	}
 	return nil, errors.New("user doesn't exist")
 }
-
 
 func (c *cache) GetModifiedUsers() map[uint64]*User {
 	c.mx.RLock()
@@ -94,6 +94,7 @@ func (c *cache) UpdateStatistic(userID uint64, amount float64, changesType strin
 	statistics := c.GetUserStatistics(userID)
 	c.mx.Lock()
 	defer c.mx.Unlock()
+
 	switch changesType {
 	case AddDeposit:
 		statistics.DepositSum += amount

@@ -1,11 +1,12 @@
 package src
 
 import (
-	"github.com/gin-gonic/gin"
 	"log"
 	"net/http"
 	"sync"
 	"time"
+
+	"github.com/gin-gonic/gin"
 )
 
 const tokenTest = "testtask"
@@ -36,7 +37,7 @@ func (s *UserService) AddUser(c *gin.Context) {
 	}
 
 	//save new user to cache
-	if err := MyCache.AddUser(&user); err != nil {
+	if err := transactionCache.AddUser(&user); err != nil {
 		log.Println("Error while saving user to cache")
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "can't save user"})
 		return
@@ -53,7 +54,7 @@ func (s *UserService) AddUser(c *gin.Context) {
 }
 
 func (s *UserService) updateUsers() {
-	for _, user := range MyCache.GetModifiedUsers() {
+	for _, user := range transactionCache.GetModifiedUsers() {
 		log.Println("Saving user to cache", user.ID)
 		if _, err := s.UsersRepo.AddUser(*user); err != nil {
 			log.Println("Error in AddUser while adding user in db: ")
@@ -61,7 +62,7 @@ func (s *UserService) updateUsers() {
 			return
 		}
 	}
-	 MyCache.ZeroingModifiedUsers()
+	transactionCache.ZeroingModifiedUsers()
 }
 
 func (s *UserService) GetUser(c *gin.Context) {
@@ -77,13 +78,13 @@ func (s *UserService) GetUser(c *gin.Context) {
 		return
 	}
 
-	user, err := MyCache.GetUser(userData.ID)
+	user, err := transactionCache.GetUser(userData.ID)
 	if err != nil {
 		log.Println("Error while getting user from cache", err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": "can't get user"})
 		return
 	}
-	userStatistics := MyCache.GetUserStatistics(userData.ID)
+	userStatistics := transactionCache.GetUserStatistics(userData.ID)
 
 	c.JSON(http.StatusOK, ReturnedGetUserData{
 		ID:         user.ID,
@@ -106,7 +107,7 @@ func (s *UserService) AddDeposit(c *gin.Context) {
 		return
 	}
 
-	user, err := MyCache.GetUser(depositData.UserID)
+	user, err := transactionCache.GetUser(depositData.UserID)
 	if err != nil {
 		log.Println("Error while getting user from cache", err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": "can't get user"})
@@ -122,8 +123,8 @@ func (s *UserService) AddDeposit(c *gin.Context) {
 	defer mu.Unlock()
 	user.Balance += depositData.Amount
 
-	MyCache.AddModifiedUser(user)
-	if _, err := MyCache.UpdateStatistic(user.ID, deposit.Amount, AddDeposit); err != nil {
+	transactionCache.AddModifiedUser(user)
+	if _, err := transactionCache.UpdateStatistic(user.ID, depositData.Amount, AddDeposit); err != nil {
 		log.Println("Error while update user statistic after adding deposit ", err)
 	}
 	c.JSON(http.StatusOK, ReturnedAddDepositData{
@@ -147,16 +148,10 @@ func (s *UserService) MakeTransaction(c *gin.Context) {
 		return
 	}
 
-	user, err := MyCache.GetUser(transactionData.UserID)
+	user, err := transactionCache.GetUser(transactionData.UserID)
 	if err != nil {
 		log.Println("Error while getting user from cache", err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": "can't get user"})
-		return
-	}
-
-	if !validateBalance(user.Balance, transactionData.Amount) {
-		log.Println("Error while making transaction - balance is lower then transaction amount")
-		c.JSON(http.StatusBadRequest, gin.H{"error": "so sorry, but u haven't enough money to make this transaction"})
 		return
 	}
 
@@ -167,7 +162,7 @@ func (s *UserService) MakeTransaction(c *gin.Context) {
 	case TypeWin:
 		mu.Lock()
 		user.Balance += transactionData.Amount
-		if statistic, err = MyCache.UpdateStatistic(user.ID, transactionData.Amount, Win); err != nil {
+		if statistic, err = transactionCache.UpdateStatistic(user.ID, transactionData.Amount, Win); err != nil {
 			log.Println("Error while update user stats", err)
 		}
 		mu.Unlock()
@@ -181,9 +176,14 @@ func (s *UserService) MakeTransaction(c *gin.Context) {
 			Time:          time.Now(),
 		}
 	case TypeBet:
+		if !validateBalance(user.Balance, transactionData.Amount) {
+			log.Println("Error while making transaction - balance is lower then transaction amount")
+			c.JSON(http.StatusBadRequest, gin.H{"error": "so sorry, but u haven't enough money to make this transaction"})
+			return
+		}
 		mu.Lock()
 		user.Balance -= transactionData.Amount
-		if statistic, err = MyCache.UpdateStatistic(user.ID, transactionData.Amount, MakeBet); err != nil {
+		if statistic, err = transactionCache.UpdateStatistic(user.ID, transactionData.Amount, MakeBet); err != nil {
 			log.Println("Error while update user stats", err)
 		}
 		mu.Unlock()
@@ -198,17 +198,17 @@ func (s *UserService) MakeTransaction(c *gin.Context) {
 		}
 	}
 
-	if err = MyCache.AddTransaction(user.ID, transaction); err != nil {
+	if err = transactionCache.AddTransaction(user.ID, transaction); err != nil {
 		log.Println("Error while making transaction - can't save transaction ", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "something went wrong, try a little bit later"})
 	}
-
+	c.JSON(http.StatusOK, gin.H{"error": "", "balance": user.Balance})
 }
 
 func validateToken(token string) bool {
 	return token != tokenTest
 }
 
-func validateBalance(balance, amount float64, ) bool {
+func validateBalance(balance, amount float64) bool {
 	return balance > amount
 }
